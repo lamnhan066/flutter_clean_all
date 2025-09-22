@@ -22,6 +22,12 @@ class FlutterCleanAll {
       return;
     }
 
+    // Check if directory is readable before processing
+    if (!await directory.stat().then((s) => s.mode & 0x4 != 0)) {
+      _logger.error('Directory not accessible: ${directory.path}');
+      return;
+    }
+
     // Start scanning animation
     _logger.startAnimation(
       'Scanning for Flutter projects...',
@@ -70,6 +76,15 @@ class FlutterCleanAll {
     required bool useFvm,
     required bool dryRun,
   }) async {
+    // Verify flutter/fvm commands exist before execution
+    final flutterExists = await Process.run('which', [
+      useFvm ? 'fvm' : 'flutter',
+    ]);
+    if (flutterExists.exitCode != 0) {
+      _logger.error('Flutter command not found');
+      return;
+    }
+
     final command = useFvm ? 'fvm flutter clean' : 'flutter clean';
     if (dryRun) {
       _logger.dryRun('Dry run: Would execute "$command" in ${directory.path}');
