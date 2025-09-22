@@ -17,77 +17,87 @@ class FlutterCleanAll {
     bool useFvm = false,
     bool dryRun = false,
   }) async {
-    final directory = Directory(path.absolute(inputDir));
+    try {
+      final directory = Directory(path.absolute(inputDir));
 
-    if (!await directory.exists()) {
-      _logger.error('The provided directory does not exist: $inputDir');
-      return {'successful': 0, 'failed': 0};
-    }
+      if (!await directory.exists()) {
+        _logger.error('The provided directory does not exist: $inputDir');
+        return {'successful': 0, 'failed': 0};
+      }
 
-    // Check if directory is readable before processing
-    if (!await directory.stat().then((s) => s.mode & 0x4 != 0)) {
-      _logger.error('Directory not accessible: ${directory.path}');
-      return {'successful': 0, 'failed': 0};
-    }
+      // Security check: Ensure it's actually a directory and not a file
+      final stat = await directory.stat();
+      if (stat.type != FileSystemEntityType.directory) {
+        _logger.error('Path is not a directory: $inputDir');
+        return {'successful': 0, 'failed': 0};
+      }
 
-    // Start scanning animation
-    _logger.startAnimation(
-      'Scanning for Flutter projects...',
-      type: AnimationType.spinner,
-    );
-
-    final flutterProjects = await listFlutterDirectories(directory: directory);
-
-    // Stop scanning animation
-    _logger.stopAnimation();
-
-    if (flutterProjects.isEmpty) {
-      _logger.warning('No Flutter projects found in the specified directory.');
-      return {'successful': 0, 'failed': 0};
-    }
-
-    _logger.success('Found ${flutterProjects.length} Flutter project(s)');
-
-    int cleanedCount = 0;
-    int failedCount = 0;
-
-    for (var projectDir in flutterProjects) {
-      // Show progress during cleaning
-      _logger.showProgress(
-        cleanedCount + failedCount + 1,
-        flutterProjects.length,
-        'Cleaning ${path.basename(projectDir.path)}...',
+      // Start scanning animation
+      _logger.startAnimation(
+        'Scanning for Flutter projects...',
+        type: AnimationType.spinner,
       );
 
-      final success = await _flutterClean(
-        directory: projectDir,
-        useFvm: useFvm,
-        dryRun: dryRun,
+      final flutterProjects = await listFlutterDirectories(
+        directory: directory,
       );
 
-      if (success) {
-        cleanedCount++;
+      // Stop scanning animation
+      _logger.stopAnimation();
+
+      if (flutterProjects.isEmpty) {
+        _logger.warning(
+          'No Flutter projects found in the specified directory.',
+        );
+        return {'successful': 0, 'failed': 0};
+      }
+
+      _logger.success('Found ${flutterProjects.length} Flutter project(s)');
+
+      int cleanedCount = 0;
+      int failedCount = 0;
+
+      for (var projectDir in flutterProjects) {
+        // Show progress during cleaning
+        _logger.showProgress(
+          cleanedCount + failedCount + 1,
+          flutterProjects.length,
+          'Cleaning ${path.basename(projectDir.path)}...',
+        );
+
+        final success = await _flutterClean(
+          directory: projectDir,
+          useFvm: useFvm,
+          dryRun: dryRun,
+        );
+
+        if (success) {
+          cleanedCount++;
+        } else {
+          failedCount++;
+        }
+      }
+
+      // Show comprehensive results
+      if (failedCount == 0) {
+        _logger.animatedSuccess('Cleaned $cleanedCount Flutter project(s)!');
       } else {
-        failedCount++;
+        _logger.warning(
+          'Completed with $cleanedCount successful and $failedCount failed operations.',
+        );
+        if (cleanedCount > 0) {
+          _logger.success('Successfully cleaned $cleanedCount project(s)');
+        }
+        if (failedCount > 0) {
+          _logger.error('Failed to clean $failedCount project(s)');
+        }
       }
-    }
 
-    // Show comprehensive results
-    if (failedCount == 0) {
-      _logger.animatedSuccess('Cleaned $cleanedCount Flutter project(s)!');
-    } else {
-      _logger.warning(
-        'Completed with $cleanedCount successful and $failedCount failed operations.',
-      );
-      if (cleanedCount > 0) {
-        _logger.success('Successfully cleaned $cleanedCount project(s)');
-      }
-      if (failedCount > 0) {
-        _logger.error('Failed to clean $failedCount project(s)');
-      }
+      return {'successful': cleanedCount, 'failed': failedCount};
+    } catch (e) {
+      _logger.error('Unexpected error during cleaning process: $e');
+      return {'successful': 0, 'failed': 0};
     }
-
-    return {'successful': cleanedCount, 'failed': failedCount};
   }
 
   Future<bool> _flutterClean({
@@ -152,23 +162,47 @@ class FlutterCleanAll {
   }) async {
     final subDirectories = <Directory>[];
 
-    await for (var entity in directory.list(
-      recursive: true,
-      followLinks: false,
-    )) {
-      if (entity is Directory && await validateProject(directory: entity)) {
-        subDirectories.add(entity);
+    try {
+      await for (var entity in directory.list(
+        recursive: true,
+        followLinks: false, // Security: Don't follow symlinks to prevent issues
+      )) {
+        if (entity is Directory) {
+          // Additional safety check for symlinks
+          final stat = await entity.stat();
+          if (stat.type == FileSystemEntityType.link) {
+            _logger.debug('Skipping symlink: ${entity.path}');
+            continue;
+          }
+
+          if (await validateProject(directory: entity)) {
+            subDirectories.add(entity);
+          }
+        }
       }
+    } catch (e) {
+      _logger.error('Error scanning directory ${directory.path}: $e');
     }
 
     return subDirectories;
   }
 
   Future<bool> validateProject({required Directory directory}) async {
-    final pubspecFile = File('${directory.path}/pubspec.yaml');
-    final libDir = Directory('${directory.path}/lib');
-    bool pubspecFileExists = await pubspecFile.exists();
-    bool libDirExists = await libDir.exists();
-    return pubspecFileExists && libDirExists;
+    try {
+      // Security check: Skip if it's a symlink
+      final stat = await directory.stat();
+      if (stat.type == FileSystemEntityType.link) {
+        return false;
+      }
+
+      final pubspecFile = File('${directory.path}/pubspec.yaml');
+      final libDir = Directory('${directory.path}/lib');
+
+      // Basic existence checks (original behavior - just check file/directory existence)
+      return await pubspecFile.exists() && await libDir.exists();
+    } catch (e) {
+      _logger.debug('Error validating project ${directory.path}: $e');
+      return false;
+    }
   }
 }
