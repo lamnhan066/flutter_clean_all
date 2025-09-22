@@ -170,6 +170,6 @@ void showUsage(ArgParser parser) {
 }
 
 void showVersion() {
-  print('Flutter Clean All version 0.0.1');
+  print('Flutter Clean All version 0.0.2');
   print('A tool to recursively clean all Flutter projects in a directory.');
 }
