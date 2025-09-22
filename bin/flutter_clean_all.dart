@@ -105,11 +105,22 @@ void main(List<String> arguments) async {
     }
 
     final flutterCleanAll = FlutterCleanAll(logger: cliLogger);
-    await flutterCleanAll.cleanAll(
+    final result = await flutterCleanAll.cleanAll(
       directoryPath,
       useFvm: useFvm,
       dryRun: dryRun,
     );
+
+    // Exit with appropriate code based on results
+    final failed = result['failed'] ?? 0;
+
+    if (failed > 0) {
+      // Exit code 1 if any projects failed to clean
+      exit(1);
+    } else {
+      // Exit code 0 for complete success
+      exit(0);
+    }
   } catch (e) {
     if (e is FormatException) {
       cliLogger.error('Error: ${e.message}');

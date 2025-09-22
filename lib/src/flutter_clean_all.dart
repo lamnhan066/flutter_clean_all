@@ -10,7 +10,9 @@ class FlutterCleanAll {
   /// Create a FlutterCleanAll instance with optional custom logger
   FlutterCleanAll({Logger? logger}) : _logger = logger ?? Logger.instance;
 
-  Future<void> cleanAll(
+  /// Clean all Flutter projects in the specified directory
+  /// Returns a map with 'successful' and 'failed' counts
+  Future<Map<String, int>> cleanAll(
     String inputDir, {
     bool useFvm = false,
     bool dryRun = false,
@@ -19,13 +21,13 @@ class FlutterCleanAll {
 
     if (!await directory.exists()) {
       _logger.error('The provided directory does not exist: $inputDir');
-      return;
+      return {'successful': 0, 'failed': 0};
     }
 
     // Check if directory is readable before processing
     if (!await directory.stat().then((s) => s.mode & 0x4 != 0)) {
       _logger.error('Directory not accessible: ${directory.path}');
-      return;
+      return {'successful': 0, 'failed': 0};
     }
 
     // Start scanning animation
@@ -41,37 +43,54 @@ class FlutterCleanAll {
 
     if (flutterProjects.isEmpty) {
       _logger.warning('No Flutter projects found in the specified directory.');
-      return;
+      return {'successful': 0, 'failed': 0};
     }
 
     _logger.success('Found ${flutterProjects.length} Flutter project(s)');
 
     int cleanedCount = 0;
-    for (var projectDir in flutterProjects) {
-      try {
-        // Show progress during cleaning
-        _logger.showProgress(
-          cleanedCount + 1,
-          flutterProjects.length,
-          'Cleaning ${path.basename(projectDir.path)}...',
-        );
+    int failedCount = 0;
 
-        await _flutterClean(
-          directory: projectDir,
-          useFvm: useFvm,
-          dryRun: dryRun,
-        );
+    for (var projectDir in flutterProjects) {
+      // Show progress during cleaning
+      _logger.showProgress(
+        cleanedCount + failedCount + 1,
+        flutterProjects.length,
+        'Cleaning ${path.basename(projectDir.path)}...',
+      );
+
+      final success = await _flutterClean(
+        directory: projectDir,
+        useFvm: useFvm,
+        dryRun: dryRun,
+      );
+
+      if (success) {
         cleanedCount++;
-      } catch (e) {
-        _logger.error('Error cleaning project at ${projectDir.path}: $e');
+      } else {
+        failedCount++;
       }
     }
 
-    // Show animated success message
-    _logger.animatedSuccess('Cleaned $cleanedCount Flutter project(s)!');
+    // Show comprehensive results
+    if (failedCount == 0) {
+      _logger.animatedSuccess('Cleaned $cleanedCount Flutter project(s)!');
+    } else {
+      _logger.warning(
+        'Completed with $cleanedCount successful and $failedCount failed operations.',
+      );
+      if (cleanedCount > 0) {
+        _logger.success('Successfully cleaned $cleanedCount project(s)');
+      }
+      if (failedCount > 0) {
+        _logger.error('Failed to clean $failedCount project(s)');
+      }
+    }
+
+    return {'successful': cleanedCount, 'failed': failedCount};
   }
 
-  Future<void> _flutterClean({
+  Future<bool> _flutterClean({
     required Directory directory,
     required bool useFvm,
     required bool dryRun,
@@ -81,24 +100,51 @@ class FlutterCleanAll {
       useFvm ? 'fvm' : 'flutter',
     ]);
     if (flutterExists.exitCode != 0) {
-      _logger.error('Flutter command not found');
-      return;
+      _logger.error('Flutter command not found: ${useFvm ? 'fvm' : 'flutter'}');
+      return false;
     }
 
     final command = useFvm ? 'fvm flutter clean' : 'flutter clean';
     if (dryRun) {
       _logger.dryRun('Dry run: Would execute "$command" in ${directory.path}');
-      return;
+      return true; // Assume success for dry run
     }
-    final result = await Process.run(useFvm ? 'fvm flutter' : 'flutter', [
-      'clean',
-    ], workingDirectory: directory.path);
-    if (result.exitCode != 0) {
-      throw Exception(
-        'Failed to run "$command" in ${directory.path}: ${result.stderr}',
+
+    try {
+      final result = await Process.run(
+        useFvm ? 'fvm' : 'flutter',
+        useFvm ? ['flutter', 'clean'] : ['clean'],
+        workingDirectory: directory.path,
       );
+
+      if (result.exitCode == 0) {
+        _logger.success('Successfully ran "$command" in ${directory.path}');
+        return true;
+      } else {
+        // Handle non-zero exit codes gracefully
+        final errorMessage = result.stderr.toString().trim();
+        final outputMessage = result.stdout.toString().trim();
+
+        _logger.error(
+          'Failed to run "$command" in ${directory.path} (exit code: ${result.exitCode})',
+        );
+
+        if (errorMessage.isNotEmpty) {
+          _logger.debug('Error output: $errorMessage');
+        }
+
+        if (outputMessage.isNotEmpty) {
+          _logger.debug('Standard output: $outputMessage');
+        }
+
+        return false;
+      }
+    } catch (e) {
+      _logger.error(
+        'Exception while running "$command" in ${directory.path}: $e',
+      );
+      return false;
     }
-    _logger.success('Successfully ran "$command" in ${directory.path}');
   }
 
   Future<List<Directory>> listFlutterDirectories({
