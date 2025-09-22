@@ -11,7 +11,7 @@ class FlutterCleanAll {
   FlutterCleanAll({Logger? logger}) : _logger = logger ?? Logger.instance;
 
   /// Clean all Flutter projects in the specified directory
-  /// Returns a map with 'successful' and 'failed' counts
+  /// Returns a map with 'successful', 'failed', and 'freedBytes' counts
   Future<Map<String, int>> cleanAll(
     String inputDir, {
     bool useFvm = false,
@@ -56,14 +56,29 @@ class FlutterCleanAll {
 
       int cleanedCount = 0;
       int failedCount = 0;
+      int totalFreedBytes = 0;
 
       for (var projectDir in flutterProjects) {
+        // Calculate size before cleaning
+        final sizeBefore = dryRun
+            ? 0
+            : await _calculateCleanableSize(projectDir);
+
         // Show progress during cleaning
-        _logger.showProgress(
-          cleanedCount + failedCount + 1,
-          flutterProjects.length,
-          'Cleaning ${path.basename(projectDir.path)}...',
-        );
+        final projectName = path.basename(projectDir.path);
+        if (!dryRun && sizeBefore > 0) {
+          _logger.showProgress(
+            cleanedCount + failedCount + 1,
+            flutterProjects.length,
+            'Cleaning $projectName (${_formatBytes(sizeBefore)})...',
+          );
+        } else {
+          _logger.showProgress(
+            cleanedCount + failedCount + 1,
+            flutterProjects.length,
+            'Cleaning $projectName...',
+          );
+        }
 
         final success = await _flutterClean(
           directory: projectDir,
@@ -73,6 +88,12 @@ class FlutterCleanAll {
 
         if (success) {
           cleanedCount++;
+          if (!dryRun) {
+            // Calculate freed space (sizeBefore - sizeAfter)
+            final sizeAfter = await _calculateCleanableSize(projectDir);
+            final freedBytes = (sizeBefore - sizeAfter).abs();
+            totalFreedBytes += freedBytes;
+          }
         } else {
           failedCount++;
         }
@@ -80,24 +101,120 @@ class FlutterCleanAll {
 
       // Show comprehensive results
       if (failedCount == 0) {
-        _logger.animatedSuccess('Cleaned $cleanedCount Flutter project(s)!');
+        if (!dryRun && totalFreedBytes > 0) {
+          _logger.animatedSuccess(
+            'Cleaned $cleanedCount Flutter project(s)! Freed ${_formatBytes(totalFreedBytes)}',
+          );
+        } else {
+          _logger.animatedSuccess('Cleaned $cleanedCount Flutter project(s)!');
+        }
       } else {
         _logger.warning(
           'Completed with $cleanedCount successful and $failedCount failed operations.',
         );
         if (cleanedCount > 0) {
-          _logger.success('Successfully cleaned $cleanedCount project(s)');
+          if (!dryRun && totalFreedBytes > 0) {
+            _logger.success(
+              'Successfully cleaned $cleanedCount project(s), freed ${_formatBytes(totalFreedBytes)}',
+            );
+          } else {
+            _logger.success('Successfully cleaned $cleanedCount project(s)');
+          }
         }
         if (failedCount > 0) {
           _logger.error('Failed to clean $failedCount project(s)');
         }
       }
 
-      return {'successful': cleanedCount, 'failed': failedCount};
+      return {
+        'successful': cleanedCount,
+        'failed': failedCount,
+        'freedBytes': totalFreedBytes,
+      };
     } catch (e) {
       _logger.error('Unexpected error during cleaning process: $e');
-      return {'successful': 0, 'failed': 0};
+      return {'successful': 0, 'failed': 0, 'freedBytes': 0};
     }
+  }
+
+  /// Calculate the size of cleanable files/directories in a Flutter project
+  Future<int> _calculateCleanableSize(Directory projectDir) async {
+    int totalSize = 0;
+
+    try {
+      // List of directories/files that flutter clean removes
+      final cleanableItems = [
+        'build',
+        '.dart_tool',
+        'android/.gradle',
+        'android/build',
+        'ios/build',
+        'ios/.symlinks',
+        'ios/Flutter/Flutter.framework',
+        'ios/Flutter/Flutter.podspec',
+        'macos/build',
+        'linux/build',
+        'windows/build',
+        'web/build',
+      ];
+
+      for (final item in cleanableItems) {
+        final itemPath = path.join(projectDir.path, item);
+        final entity = FileSystemEntity.typeSync(itemPath);
+
+        if (entity == FileSystemEntityType.directory) {
+          totalSize += await _calculateDirectorySize(Directory(itemPath));
+        } else if (entity == FileSystemEntityType.file) {
+          final file = File(itemPath);
+          final stat = await file.stat();
+          totalSize += stat.size;
+        }
+      }
+    } catch (e) {
+      _logger.debug('Error calculating size for ${projectDir.path}: $e');
+    }
+
+    return totalSize;
+  }
+
+  /// Recursively calculate the size of a directory
+  Future<int> _calculateDirectorySize(Directory directory) async {
+    int size = 0;
+
+    try {
+      if (!await directory.exists()) return 0;
+
+      await for (final entity in directory.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is File) {
+          try {
+            final stat = await entity.stat();
+            size += stat.size;
+          } catch (e) {
+            // Skip files that can't be accessed
+            _logger.debug('Could not access file ${entity.path}: $e');
+          }
+        }
+      }
+    } catch (e) {
+      _logger.debug(
+        'Error calculating directory size for ${directory.path}: $e',
+      );
+    }
+
+    return size;
+  }
+
+  /// Format bytes into human-readable format (B, KB, MB, GB)
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '${bytes}B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)}KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)}GB';
   }
 
   Future<bool> _flutterClean({
