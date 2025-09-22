@@ -9,7 +9,12 @@ A powerful command-line tool and Dart library to recursively find and clean all 
 - 🔧 **FVM Support**: Works with Flutter Version Management (FVM)
 - 🎯 **Dry Run Mode**: Preview what will be cleaned before executing
 - 📁 **Smart Detection**: Identifies Flutter projects by checking for `pubspec.yaml` and `lib/` directory
-- 🛡️ **Error Handling**: Continues cleaning other projects even if one fails
+- 🛡️ **Enhanced Error Handling**: Continues cleaning other projects even if one fails with detailed error reporting
+- 🎨 **Animated Feedback**: Beautiful animated progress indicators and status updates
+- 📊 **Progress Tracking**: Real-time progress bars and completion statistics
+- 🚀 **Smart Exit Codes**: Returns appropriate exit codes for CI/CD integration
+- 🔒 **Security Features**: Built-in protection against symlink attacks and directory traversal
+- 🎛️ **Customizable Output**: Control colors, animations, and verbosity levels
 - 💻 **Cross-Platform**: Works on Windows, macOS, and Linux
 
 ## Installation
@@ -63,34 +68,50 @@ flutter_clean_all /path/to/projects --fvm
 Usage: flutter_clean_all [options] <directory>
 
 Options:
--h, --help       Show usage information
-    --fvm        Use FVM (Flutter Version Management) to run flutter commands
-    --dry-run    Show what would be cleaned without actually executing the commands
--v, --version    Show version information
+-h, --help          Show usage information
+    --fvm           Use FVM (Flutter Version Management) to run flutter commands
+    --dry-run       Show what would be cleaned without actually executing the commands
+-v, --version       Show version information
+    --verbose       Enable verbose output with detailed logging
+    --no-color      Disable colored output (useful for CI/CD)
+    --no-animations Disable animated progress indicators
 ```
 
-### Examples
+### Advanced Examples
 
 ```bash
 # Clean all Flutter projects in ~/projects directory
 flutter_clean_all ~/projects
 
-# Dry run to see what would be cleaned
-flutter_clean_all . --dry-run
+# Dry run to see what would be cleaned with verbose output
+flutter_clean_all . --dry-run --verbose
 
-# Clean using FVM
-flutter_clean_all ~/flutter-projects --fvm
+# Clean using FVM with animations disabled (for CI/CD)
+flutter_clean_all ~/flutter-projects --fvm --no-animations --no-color
 
-# Clean current directory and subdirectories
-flutter_clean_all .
+# Clean current directory with full customization
+flutter_clean_all . --verbose --no-color
+
+# Clean with minimal output (no animations, no colors)
+flutter_clean_all /path/to/projects --no-animations --no-color
 
 # Show help
 flutter_clean_all --help
 ```
 
+### Exit Codes
+
+The tool returns appropriate exit codes for integration with CI/CD pipelines:
+
+- `0`: Success - All projects cleaned successfully
+- `1`: Failure - One or more projects failed to clean
+- `2`: Error - Invalid arguments or system error
+
 ## Library Usage
 
 You can also use Flutter Clean All as a Dart library in your own projects:
+
+### Simple Library Usage
 
 ```dart
 import 'package:flutter_clean_all/flutter_clean_all.dart';
@@ -99,24 +120,73 @@ void main() async {
   final cleaner = FlutterCleanAll();
   
   // Clean all Flutter projects in a directory
-  await cleaner.cleanAll('/path/to/projects');
+  final result = await cleaner.cleanAll('/path/to/projects');
+  
+  print('Successfully cleaned: ${result['successful']} projects');
+  print('Failed to clean: ${result['failed']} projects');
+}
+```
+
+### Advanced Usage with Custom Logger
+
+```dart
+import 'package:flutter_clean_all/flutter_clean_all.dart';
+
+void main() async {
+  // Create custom logger with specific settings
+  final logger = Logger.create(
+    level: LogLevel.verbose,    // Set log level
+    enableColors: true,         // Enable colored output
+    enableAnimations: true,     // Enable animations
+    output: stdout,             // Custom output stream
+  );
+  
+  final cleaner = FlutterCleanAll(logger: logger);
   
   // Clean with options
-  await cleaner.cleanAll(
+  final result = await cleaner.cleanAll(
     '/path/to/projects',
     useFvm: true,     // Use FVM
     dryRun: true,     // Dry run mode
   );
+  
+  // Handle results
+  if (result['failed']! > 0) {
+    print('Some projects failed to clean');
+    exit(1);
+  } else {
+    print('All projects cleaned successfully!');
+  }
+}
+```
+
+### Validation and Project Discovery
+
+```dart
+import 'package:flutter_clean_all/flutter_clean_all.dart';
+import 'dart:io';
+
+void main() async {
+  final cleaner = FlutterCleanAll();
   
   // Validate if a directory is a Flutter project
   final isFlutterProject = await cleaner.validateProject(
     directory: Directory('/path/to/project')
   );
   
+  if (isFlutterProject) {
+    print('Valid Flutter project found!');
+  }
+  
   // List all Flutter projects in a directory
   final projects = await cleaner.listFlutterDirectories(
     directory: Directory('/path/to/search')
   );
+  
+  print('Found ${projects.length} Flutter projects:');
+  for (final project in projects) {
+    print('  - ${project.path}');
+  }
 }
 ```
 
@@ -124,13 +194,64 @@ void main() async {
 
 Flutter Clean All works by:
 
-1. **Recursively scanning** the provided directory for subdirectories
+1. **Recursively scanning** the provided directory for subdirectories with animated progress feedback
 2. **Validating each directory** by checking for both:
    - `pubspec.yaml` file
    - `lib/` directory
-3. **Running `flutter clean`** (or `fvm flutter clean`) in each valid Flutter project
+3. **Running `flutter clean`** (or `fvm flutter clean`) in each valid Flutter project with real-time progress tracking
 4. **Continuing execution** even if some projects fail to clean
-5. **Reporting results** with the number of projects successfully cleaned
+5. **Reporting comprehensive results** with success/failure counts and detailed error information
+
+## Animation and Visual Feedback
+
+The tool provides rich visual feedback during operation:
+
+### Animation Types
+
+- **Spinner**: Rotating spinner during directory scanning
+- **Progress Bar**: Real-time progress tracking during cleaning
+- **Dots**: Pulsing dots for ongoing operations
+- **Typewriter**: Character-by-character text animation for results
+
+### Customization Options
+
+```bash
+# Disable all animations (useful for CI/CD)
+flutter_clean_all /path --no-animations
+
+# Disable colors but keep animations
+flutter_clean_all /path --no-color
+
+# Enable verbose logging with full details
+flutter_clean_all /path --verbose
+
+# Minimal output for automation
+flutter_clean_all /path --no-animations --no-color
+```
+
+### Logger Configuration
+
+When using as a library, you can customize the logger:
+
+```dart
+final logger = Logger.create(
+  level: LogLevel.verbose,      // debug, info, warning, error, verbose
+  enableColors: true,           // Colored output
+  enableAnimations: true,       // Animated feedback
+  output: stdout,              // Custom output stream
+);
+
+final cleaner = FlutterCleanAll(logger: logger);
+```
+
+## Security Features
+
+The tool includes several security enhancements:
+
+- **Symlink Protection**: Automatically detects and skips symbolic links to prevent directory traversal attacks
+- **Path Validation**: Validates that target paths are actual directories
+- **Safe Recursion**: Implements safe directory traversal with error handling
+- **Input Sanitization**: Validates command-line arguments and file paths
 
 ## Project Structure Detection
 
@@ -148,13 +269,34 @@ This ensures compatibility with:
 
 ## Error Handling
 
-The tool is designed to be robust:
+The tool is designed to be robust and production-ready:
 
-- Continues cleaning other projects if one fails
-- Provides clear error messages
-- Reports the total number of projects cleaned
-- Handles missing directories gracefully
-- Validates input parameters
+### Error Recovery
+
+- **Graceful Failures**: Continues cleaning other projects if one fails
+- **Detailed Error Messages**: Provides clear, actionable error information
+- **Exit Code Management**: Returns appropriate exit codes for automation
+- **Timeout Handling**: Manages long-running operations safely
+
+### Error Types Handled
+
+- Missing directories or files
+- Permission denied errors
+- Flutter/FVM command not found
+- Corrupted or invalid pubspec.yaml files
+- Network or filesystem errors during cleaning
+
+### CI/CD Integration
+
+```yaml
+# GitHub Actions example
+- name: Clean Flutter Projects
+  run: flutter_clean_all . --no-animations --no-color
+  continue-on-error: false
+
+# The tool will exit with code 1 if any projects fail to clean
+# Use continue-on-error: true if you want the workflow to continue
+```
 
 ## Development
 
