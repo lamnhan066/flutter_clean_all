@@ -190,6 +190,7 @@ class Logger {
       final formattedMessage = _enableColors
           ? '\x1B[32m$message\x1B[0m' // Green
           : message;
+      _output.write('\r\x1B[K'); // Clear the current line
       _output.writeln(formattedMessage);
     }
   }
@@ -200,6 +201,7 @@ class Logger {
       final formattedMessage = _enableColors
           ? '\x1B[36m$message\x1B[0m' // Cyan
           : message;
+      _output.write('\r\x1B[K'); // Clear the current line
       _output.writeln(formattedMessage);
     }
   }
@@ -246,13 +248,9 @@ class Logger {
           '[\x1B[32m${'=' * filledLength}\x1B[0m${' ' * (barLength - filledLength)}]';
       final coloredText =
           '$coloredBar \x1B[33m$percentage%\x1B[0m (\x1B[36m$current\x1B[0m/\x1B[36m$total\x1B[0m) $message';
-      _output.write('\r\x1B[K$coloredText');
+      _output.write('\r$coloredText');
     } else {
-      _output.write('\r\x1B[K$progressText');
-    }
-
-    if (current == total) {
-      _output.writeln(); // New line when complete
+      _output.write('\r$progressText');
     }
   }
 
