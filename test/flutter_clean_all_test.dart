@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_clean_all/flutter_clean_all.dart';
@@ -10,9 +11,18 @@ void main() {
     late FlutterCleanAll flutterCleanAll;
     late Directory tempDir;
     late String testDirPath;
+    late List<String> logOutput;
+    late Logger testLogger;
 
     setUp(() async {
-      flutterCleanAll = FlutterCleanAll();
+      logOutput = <String>[];
+      testLogger = Logger.create(
+        level: LogLevel.info,
+        enableColors: false,
+        enableAnimations: false,
+        output: _TestIOSink(logOutput),
+      );
+      flutterCleanAll = FlutterCleanAll(logger: testLogger);
       tempDir = await Directory.systemTemp.createTemp('flutter_clean_all_test');
       testDirPath = tempDir.path;
     });
@@ -27,14 +37,10 @@ void main() {
       test('should handle non-existent directory gracefully', () async {
         final nonExistentDir = path.join(testDirPath, 'non_existent');
 
-        // Capture stdout to verify the message
-        final stdout = <String>[];
-        await runWithCapture(() async {
-          await flutterCleanAll.cleanAll(nonExistentDir);
-        }, stdout);
+        await flutterCleanAll.cleanAll(nonExistentDir);
 
         expect(
-          stdout.any(
+          logOutput.any(
             (line) => line.contains('The provided directory does not exist'),
           ),
           isTrue,
@@ -49,13 +55,10 @@ void main() {
         final regularFile = File(path.join(subDir.path, 'regular_file.txt'));
         await regularFile.writeAsString('Not a Flutter project');
 
-        final stdout = <String>[];
-        await runWithCapture(() async {
-          await flutterCleanAll.cleanAll(testDirPath);
-        }, stdout);
+        await flutterCleanAll.cleanAll(testDirPath);
 
         expect(
-          stdout.any((line) => line.contains('No Flutter projects found')),
+          logOutput.any((line) => line.contains('No Flutter projects found')),
           isTrue,
         );
       });
@@ -65,17 +68,16 @@ void main() {
         await createMockFlutterProject(testDirPath, 'project1');
         await createMockFlutterProject(testDirPath, 'project2');
 
-        final stdout = <String>[];
-        await runWithCapture(() async {
-          await flutterCleanAll.cleanAll(testDirPath, dryRun: true);
-        }, stdout);
+        await flutterCleanAll.cleanAll(testDirPath, dryRun: true);
 
         expect(
-          stdout.any((line) => line.contains('Cleaned 2 Flutter project(s)')),
+          logOutput.any(
+            (line) => line.contains('Cleaned 2 Flutter project(s)'),
+          ),
           isTrue,
         );
         expect(
-          stdout
+          logOutput
               .where(
                 (line) =>
                     line.contains('Dry run: Would execute "flutter clean"'),
@@ -88,17 +90,10 @@ void main() {
       test('should use fvm when useFvm is true', () async {
         await createMockFlutterProject(testDirPath, 'fvm_project');
 
-        final stdout = <String>[];
-        await runWithCapture(() async {
-          await flutterCleanAll.cleanAll(
-            testDirPath,
-            useFvm: true,
-            dryRun: true,
-          );
-        }, stdout);
+        await flutterCleanAll.cleanAll(testDirPath, useFvm: true, dryRun: true);
 
         expect(
-          stdout.any(
+          logOutput.any(
             (line) =>
                 line.contains('Dry run: Would execute "fvm flutter clean"'),
           ),
@@ -114,13 +109,12 @@ void main() {
           'nested_project',
         );
 
-        final stdout = <String>[];
-        await runWithCapture(() async {
-          await flutterCleanAll.cleanAll(testDirPath, dryRun: true);
-        }, stdout);
+        await flutterCleanAll.cleanAll(testDirPath, dryRun: true);
 
         expect(
-          stdout.any((line) => line.contains('Cleaned 2 Flutter project(s)')),
+          logOutput.any(
+            (line) => line.contains('Cleaned 2 Flutter project(s)'),
+          ),
           isTrue,
         );
       });
@@ -143,13 +137,12 @@ void main() {
           path.join(incompleteDir.path, 'pubspec.yaml'),
         ).writeAsString('name: incomplete');
 
-        final stdout = <String>[];
-        await runWithCapture(() async {
-          await flutterCleanAll.cleanAll(testDirPath, dryRun: true);
-        }, stdout);
+        await flutterCleanAll.cleanAll(testDirPath, dryRun: true);
 
         expect(
-          stdout.any((line) => line.contains('Cleaned 1 Flutter project(s)')),
+          logOutput.any(
+            (line) => line.contains('Cleaned 1 Flutter project(s)'),
+          ),
           isTrue,
         );
       });
@@ -550,4 +543,56 @@ Future<void> runWithCapture(
   );
 
   await zone.run(fn);
+}
+
+/// Test implementation of IOSink for capturing output
+class _TestIOSink implements IOSink {
+  final List<String> _capturedOutput;
+
+  _TestIOSink(this._capturedOutput);
+
+  @override
+  void writeln([Object? obj = '']) {
+    _capturedOutput.add(obj.toString());
+  }
+
+  @override
+  void write(Object? obj) {
+    if (_capturedOutput.isEmpty) {
+      _capturedOutput.add(obj.toString());
+    } else {
+      _capturedOutput[_capturedOutput.length - 1] += obj.toString();
+    }
+  }
+
+  // Implement other required methods as no-ops for testing
+  @override
+  void writeAll(Iterable objects, [String separator = '']) {}
+
+  @override
+  void writeCharCode(int charCode) {}
+
+  @override
+  void add(List<int> data) {}
+
+  @override
+  void addError(Object error, [StackTrace? stackTrace]) {}
+
+  @override
+  Future addStream(Stream<List<int>> stream) async {}
+
+  @override
+  Future close() async {}
+
+  @override
+  Future get done => Future.value();
+
+  @override
+  Encoding get encoding => utf8;
+
+  @override
+  set encoding(Encoding encoding) {}
+
+  @override
+  Future flush() async {}
 }

@@ -6,6 +6,12 @@ import 'package:args/args.dart';
 import 'package:flutter_clean_all/flutter_clean_all.dart';
 
 void main(List<String> arguments) async {
+  // Configure logger for CLI usage
+  final cliLogger = Logger.create(
+    level: LogLevel.info,
+    enableColors: stdout.hasTerminal,
+  );
+
   final parser = ArgParser()
     ..addFlag(
       'help',
@@ -29,10 +35,30 @@ void main(List<String> arguments) async {
       abbr: 'v',
       negatable: false,
       help: 'Show version information.',
+    )
+    ..addFlag(
+      'verbose',
+      negatable: false,
+      help: 'Enable verbose output with debug information.',
+    )
+    ..addFlag('no-color', negatable: false, help: 'Disable colored output.')
+    ..addFlag(
+      'no-animations',
+      negatable: false,
+      help: 'Disable animated output and progress indicators.',
     );
 
   try {
     final results = parser.parse(arguments);
+
+    // Configure logger based on CLI flags
+    final verbose = results['verbose'] as bool;
+    final noColor = results['no-color'] as bool;
+    final noAnimations = results['no-animations'] as bool;
+
+    cliLogger.setLevel(verbose ? LogLevel.debug : LogLevel.info);
+    cliLogger.setColorEnabled(!noColor && stdout.hasTerminal);
+    cliLogger.setAnimationsEnabled(!noAnimations && stdout.hasTerminal);
 
     if (results['help'] as bool) {
       showHelp(parser);
@@ -46,15 +72,15 @@ void main(List<String> arguments) async {
 
     final restArgs = results.rest;
     if (restArgs.isEmpty) {
-      print('Error: Please provide a directory path to clean.');
-      print('');
+      cliLogger.error('Error: Please provide a directory path to clean.');
+      cliLogger.newLine();
       showUsage(parser);
       exit(1);
     }
 
     if (restArgs.length > 1) {
-      print('Error: Please provide only one directory path.');
-      print('');
+      cliLogger.error('Error: Please provide only one directory path.');
+      cliLogger.newLine();
       showUsage(parser);
       exit(1);
     }
@@ -64,13 +90,21 @@ void main(List<String> arguments) async {
     final dryRun = results['dry-run'] as bool;
 
     if (dryRun) {
-      print(
+      cliLogger.info(
         '🔍 Running in dry-run mode - no actual cleaning will be performed',
       );
-      print('');
+      cliLogger.newLine();
     }
 
-    final flutterCleanAll = FlutterCleanAll();
+    if (verbose) {
+      cliLogger.debug('Starting Flutter Clean All...');
+      cliLogger.debug('Target directory: $directoryPath');
+      cliLogger.debug('Use FVM: $useFvm');
+      cliLogger.debug('Dry run: $dryRun');
+      cliLogger.newLine();
+    }
+
+    final flutterCleanAll = FlutterCleanAll(logger: cliLogger);
     await flutterCleanAll.cleanAll(
       directoryPath,
       useFvm: useFvm,
@@ -78,12 +112,12 @@ void main(List<String> arguments) async {
     );
   } catch (e) {
     if (e is FormatException) {
-      print('Error: ${e.message}');
-      print('');
+      cliLogger.error('Error: ${e.message}');
+      cliLogger.newLine();
       showUsage(parser);
       exit(1);
     } else {
-      print('An unexpected error occurred: $e');
+      cliLogger.error('An unexpected error occurred: $e');
       exit(1);
     }
   }
@@ -104,6 +138,9 @@ void showHelp(ArgParser parser) {
     '  flutter_clean_all . --dry-run             # Show what would be cleaned',
   );
   print('  flutter_clean_all ~/projects --fvm        # Use FVM for cleaning');
+  print('  flutter_clean_all . --verbose             # Enable debug output');
+  print('  flutter_clean_all . --no-color            # Disable colored output');
+  print('  flutter_clean_all . --no-animations       # Disable animations');
   print('  flutter_clean_all --help                  # Show this help');
   print('');
   print(

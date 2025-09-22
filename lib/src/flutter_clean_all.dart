@@ -2,7 +2,14 @@ import 'dart:io';
 
 import 'package:path/path.dart' as path;
 
+import 'logger.dart';
+
 class FlutterCleanAll {
+  final Logger _logger;
+
+  /// Create a FlutterCleanAll instance with optional custom logger
+  FlutterCleanAll({Logger? logger}) : _logger = logger ?? Logger.instance;
+
   Future<void> cleanAll(
     String inputDir, {
     bool useFvm = false,
@@ -11,32 +18,51 @@ class FlutterCleanAll {
     final directory = Directory(path.absolute(inputDir));
 
     if (!await directory.exists()) {
-      print('The provided directory does not exist: $inputDir');
+      _logger.error('The provided directory does not exist: $inputDir');
       return;
     }
+
+    // Start scanning animation
+    _logger.startAnimation(
+      'Scanning for Flutter projects...',
+      type: AnimationType.spinner,
+    );
 
     final flutterProjects = await listFlutterDirectories(directory: directory);
 
+    // Stop scanning animation
+    _logger.stopAnimation();
+
     if (flutterProjects.isEmpty) {
-      print('No Flutter projects found in the specified directory.');
+      _logger.warning('No Flutter projects found in the specified directory.');
       return;
     }
+
+    _logger.success('Found ${flutterProjects.length} Flutter project(s)');
 
     int cleanedCount = 0;
     for (var projectDir in flutterProjects) {
       try {
+        // Show progress during cleaning
+        _logger.showProgress(
+          cleanedCount + 1,
+          flutterProjects.length,
+          'Cleaning ${path.basename(projectDir.path)}...',
+        );
+
         await _flutterClean(
           directory: projectDir,
           useFvm: useFvm,
           dryRun: dryRun,
         );
+        cleanedCount++;
       } catch (e) {
-        print('Error cleaning project at ${projectDir.path}: $e');
+        _logger.error('Error cleaning project at ${projectDir.path}: $e');
       }
-      cleanedCount++;
     }
 
-    print('Cleaned $cleanedCount Flutter project(s).');
+    // Show animated success message
+    _logger.animatedSuccess('Cleaned $cleanedCount Flutter project(s)!');
   }
 
   Future<void> _flutterClean({
@@ -46,7 +72,7 @@ class FlutterCleanAll {
   }) async {
     final command = useFvm ? 'fvm flutter clean' : 'flutter clean';
     if (dryRun) {
-      print('Dry run: Would execute "$command" in ${directory.path}');
+      _logger.dryRun('Dry run: Would execute "$command" in ${directory.path}');
       return;
     }
     final result = await Process.run(useFvm ? 'fvm flutter' : 'flutter', [
@@ -57,7 +83,7 @@ class FlutterCleanAll {
         'Failed to run "$command" in ${directory.path}: ${result.stderr}',
       );
     }
-    print('Successfully ran "$command" in ${directory.path}');
+    _logger.success('Successfully ran "$command" in ${directory.path}');
   }
 
   Future<List<Directory>> listFlutterDirectories({
