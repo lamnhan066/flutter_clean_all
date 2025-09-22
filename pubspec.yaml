@@ -1,5 +1,5 @@
 name: flutter_clean_all
-description: A starting point for Dart libraries or applications.
+description: A powerful CLI tool and Dart library to recursively find and clean all Flutter projects in a directory tree with animated progress feedback.
 version: 0.0.1
 repository: https://github.com/lamnhan066/flutter_clean_all
 
